@@ -210,18 +210,18 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// ---------- price fetch (Alpha Vantage — reliable CORS support for browser calls) ----------
+// ---------- price fetch (Finnhub — real-time quotes, browser-friendly CORS, 60 calls/min free) ----------
 async function fetchPrice(ticker, apiKey) {
   if (!apiKey) return { price: null, error: 'no-key' };
   try {
-    const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(ticker)}&apikey=${encodeURIComponent(apiKey)}`;
+    const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${encodeURIComponent(apiKey)}`;
     const r = await fetch(url);
+    if (r.status === 401 || r.status === 403) return { price: null, error: 'bad-key' };
+    if (r.status === 429) return { price: null, error: 'rate-limit' };
     const j = await r.json();
-    if (j.Note) return { price: null, error: 'rate-limit' }; // free tier: 25 calls/day, 5/min
-    if (j['Error Message']) return { price: null, error: 'bad-symbol' };
-    const quote = j['Global Quote'];
-    const price = quote && quote['05. price'] ? parseFloat(quote['05. price']) : null;
-    if (price && !isNaN(price)) return { price, error: null };
+    // Finnhub returns { c: currentPrice, ... }. c === 0 typically means an invalid/unrecognized symbol.
+    const price = (j && typeof j.c === 'number' && j.c > 0) ? j.c : null;
+    if (price) return { price, error: null };
     return { price: null, error: 'empty' };
   } catch (e) {
     return { price: null, error: 'network' };
@@ -403,15 +403,15 @@ async function refreshPrice(ticker) {
   setState({ priceStatus: 'loading' });
   const { price, error } = await fetchPrice(ticker, state.avKey);
   if (price) setState({ currentPrice: price, priceStatus: 'ok' });
-  else setState({ priceStatus: error === 'rate-limit' ? 'ratelimit' : 'fail' });
+  else setState({ priceStatus: error === 'rate-limit' ? 'ratelimit' : error === 'bad-key' ? 'badkey' : 'fail' });
 }
 
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   if (state.position) {
     refreshPrice(state.position.ticker);
-    // Alpha Vantage free tier: 25 calls/day, 5/min — poll every 5 minutes to stay well under both limits
-    pollTimer = setInterval(() => refreshPrice(state.position.ticker), 5 * 60000);
+    // Finnhub free tier: 60 calls/min — refresh every 30 seconds, well under the limit
+    pollTimer = setInterval(() => refreshPrice(state.position.ticker), 30000);
   }
 }
 
@@ -585,9 +585,9 @@ function render() {
     const cfg = state.ghConfig;
     html += `
       <div class="card">
-        <h2 style="font-size:15px;margin:0 0 6px;font-weight:600;">Live price (Alpha Vantage)</h2>
+        <h2 style="font-size:15px;margin:0 0 6px;font-weight:600;">Live price (Finnhub)</h2>
         <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.5;">
-          Free key from <a href="https://www.alphavantage.co/support/#api-key" target="_blank" style="color:var(--accent);">alphavantage.co</a> — 25 calls/day, refreshed every 5 minutes while a position is open.
+          Free key from <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent);">finnhub.io</a> — real-time US quotes, 60 calls/min free, refreshed every 30 seconds while a position is open.
         </div>
         <label class="field-label">API key</label>
         <input id="av-key" placeholder="${state.avKey ? '•••••••••••• (saved — leave blank to keep)' : 'your key here'}">
@@ -691,7 +691,7 @@ function render() {
           </div>
           <div style="text-align:right;">
             <div class="mono" style="font-size:18px;font-weight:700;">${state.priceStatus==='loading'?'…':state.priceStatus==='ok'?'$'+state.currentPrice.toFixed(2):'—'}</div>
-            <div style="font-size:11px;color:${(state.priceStatus==='fail'||state.priceStatus==='ratelimit'||state.priceStatus==='nokey')?'var(--red)':'var(--text-faint)'};">${state.priceStatus==='nokey'?'no API key set':state.priceStatus==='ratelimit'?'rate limit hit':state.priceStatus==='fail'?'price unavailable':'live price'}</div>
+            <div style="font-size:11px;color:${(state.priceStatus==='fail'||state.priceStatus==='ratelimit'||state.priceStatus==='nokey'||state.priceStatus==='badkey')?'var(--red)':'var(--text-faint)'};">${state.priceStatus==='nokey'?'no API key set':state.priceStatus==='badkey'?'invalid API key':state.priceStatus==='ratelimit'?'rate limit hit':state.priceStatus==='fail'?'price unavailable':'live price'}</div>
           </div>
         </div>
         ${payoffChartSVG(pos, state.currentPrice)}

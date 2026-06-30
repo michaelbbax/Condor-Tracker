@@ -239,36 +239,54 @@ function evaluateRules(pos, currentPrice, currentSpreadCost) {
     pl = credit - parseFloat(currentSpreadCost);
   }
 
-  if (pl !== null && pl >= credit * RULES.profitTargetPct) {
-    alerts.push({ level: 'action', title: 'Close — profit target hit',
-      detail: `P/L of ${fmtMoney(pl)} has reached the ${RULES.profitTargetPct*100}% target (${fmtMoney(credit*RULES.profitTargetPct)}). Lock it in.` });
-  }
+  // Hard stops — highest priority
   if (pl !== null && pl <= -credit * RULES.stopLossMultiple) {
-    alerts.push({ level: 'danger', title: 'Close — stop loss triggered',
-      detail: `Loss of ${fmtMoney(Math.abs(pl))} has reached ${RULES.stopLossMultiple}x credit received (${fmtMoney(credit*RULES.stopLossMultiple)}). Exit now, no exceptions.` });
+    alerts.push({ level: 'danger', title: 'STOP LOSS — close the whole position now',
+      detail: `Loss of ${fmtMoney(Math.abs(pl))} has reached ${RULES.stopLossMultiple}x credit (${fmtMoney(credit*RULES.stopLossMultiple)}). Action: close both spreads immediately. Do not roll. Do not wait for it to come back.` });
   }
+
+  if (dte <= RULES.finalWindowDTE && dte >= 0) {
+    alerts.push({ level: 'warn', title: `FINAL WINDOW — ${dte} day${dte===1?'':'s'} to expiration, close now`,
+      detail: `Inside the final ${RULES.finalWindowDTE}-day gamma window. Action: close the whole position today regardless of P/L. Don't hold into expiration.` });
+  }
+
+  // Strike breach — more urgent than "tested"
+  if (currentPrice && pos.shortPut && currentPrice < pos.shortPut) {
+    alerts.push({ level: 'danger', title: 'PUT STRIKE BREACHED — close the put spread now',
+      detail: `Price ($${currentPrice.toFixed(2)}) is below your short put ($${pos.shortPut}). Action: close the put spread immediately. Do not roll. Let the call spread ride if it's still safely OTM.` });
+  }
+  if (currentPrice && pos.shortCall && currentPrice > pos.shortCall) {
+    alerts.push({ level: 'danger', title: 'CALL STRIKE BREACHED — close the call spread now',
+      detail: `Price ($${currentPrice.toFixed(2)}) is above your short call ($${pos.shortCall}). Action: close the call spread immediately. Do not roll. Let the put spread ride if it's still safely OTM.` });
+  }
+
+  // Profit target
+  if (pl !== null && pl >= credit * RULES.profitTargetPct) {
+    alerts.push({ level: 'action', title: 'PROFIT TARGET — close the whole position',
+      detail: `P/L of ${fmtMoney(pl)} has reached the ${RULES.profitTargetPct*100}% target (${fmtMoney(credit*RULES.profitTargetPct)}). Action: close both spreads and lock it in. Don't hold for more.` });
+  }
+
+  // Tested (within 1%, not yet breached) — early warning only
   if (currentPrice && dte >= RULES.proximityMinDTE) {
     const putDist = pctDiff(currentPrice, pos.shortPut);
-    if (putDist <= RULES.proximityPct && putDist > -0.05) {
-      alerts.push({ level: 'warn', title: 'Put side being tested',
-        detail: `Price is ${(putDist*100).toFixed(2)}% above your short put ($${pos.shortPut}). Watch closely or manage this side.` });
+    if (putDist <= RULES.proximityPct && putDist >= 0) {
+      alerts.push({ level: 'warn', title: 'Put side being tested — watch, no action yet',
+        detail: `Price is ${(putDist*100).toFixed(2)}% above your short put ($${pos.shortPut}). Action: no action required yet. If price crosses $${pos.shortPut}, close the put spread immediately (see breach rule above).` });
     }
     if (pos.shortCall) {
       const callDist = pctDiff(pos.shortCall, currentPrice);
-      if (callDist <= RULES.proximityPct && callDist > -0.05) {
-        alerts.push({ level: 'warn', title: 'Call side being tested',
-          detail: `Price is ${(callDist*100).toFixed(2)}% below your short call ($${pos.shortCall}). Watch closely or manage this side.` });
+      if (callDist <= RULES.proximityPct && callDist >= 0) {
+        alerts.push({ level: 'warn', title: 'Call side being tested — watch, no action yet',
+          detail: `Price is ${(callDist*100).toFixed(2)}% below your short call ($${pos.shortCall}). Action: no action required yet. If price crosses $${pos.shortCall}, close the call spread immediately (see breach rule above).` });
       }
     }
   }
-  if (dte <= RULES.finalWindowDTE && dte >= 0) {
-    alerts.push({ level: 'warn', title: `${dte} day${dte===1?'':'s'} to expiration — gamma risk window`,
-      detail: `Inside the final ${RULES.finalWindowDTE}-day window. Consider closing regardless of P/L rather than holding through expiration.` });
-  }
+
   if (dte < 0) {
     alerts.push({ level: 'info', title: 'Expiration has passed',
-      detail: `This position expired ${Math.abs(dte)} day${Math.abs(dte)===1?'':'s'} ago. Log the outcome and archive it.` });
+      detail: `This position expired ${Math.abs(dte)} day${Math.abs(dte)===1?'':'s'} ago. Action: log the outcome below and archive it.` });
   }
+
   return { alerts, pl, dte };
 }
 
@@ -333,6 +351,7 @@ let state = {
   priceStatus: 'idle',
   spreadCostInput: '',
   closeFormOpen: false,
+  closeFormMode: 'full',
   ghConfig: loadGhConfig(),
   ghStatus: 'idle',
   ghError: '',
@@ -475,38 +494,112 @@ function handleUpdateSpreadCost(val) {
   renderAlertsAndPL();
 }
 
-function openCloseForm() {
-  setState({ closeFormOpen: true });
+function openCloseForm(mode) {
+  // mode: 'full' | 'put' | 'call'
+  setState({ closeFormOpen: true, closeFormMode: mode || 'full' });
 }
 
 function handleConfirmClose() {
-  const creditAtClose = document.getElementById('close-credit').value;
-  const debitAtClose = document.getElementById('close-debit').value;
-  const notes = document.getElementById('close-notes').value;
-
+  const mode = state.closeFormMode || 'full';
   if (!state.position) return;
 
-  const cr = creditAtClose !== '' ? parseFloat(creditAtClose) : state.position.credit;
-  const db = debitAtClose !== '' ? parseFloat(debitAtClose) : null;
-  const finalPl = db !== null ? (cr - db) : null;
+  if (mode === 'full') {
+    const creditAtClose = document.getElementById('close-credit').value;
+    const debitAtClose = document.getElementById('close-debit').value;
+    const notes = document.getElementById('close-notes').value;
 
-  const record = {
-    ...state.position,
+    const cr = creditAtClose !== '' ? parseFloat(creditAtClose) : state.position.credit;
+    const db = debitAtClose !== '' ? parseFloat(debitAtClose) : null;
+    let finalPl = db !== null ? (cr - db) : null;
+
+    // Fold in any already-closed legs from earlier partial closes
+    const priorLegsPl = (state.position.closedLegs || []).reduce((s, l) => s + (l.pl || 0), 0);
+    if (finalPl !== null) finalPl += priorLegsPl;
+
+    const record = {
+      ...state.position,
+      closedAt: new Date().toISOString(),
+      closeCredit: cr,
+      closeDebit: db,
+      finalPl,
+      notes: notes || '',
+    };
+    const newHistory = [record, ...state.history];
+    saveHistory(newHistory);
+    clearPosition();
+    if (pollTimer) clearInterval(pollTimer);
+    setState({
+      position: null, history: newHistory, closeFormOpen: false,
+      spreadCostInput: '', currentPrice: null, priceStatus: 'idle',
+    });
+    pushToGithub(`Close ${record.ticker} — ${finalPl !== null ? fmtMoney(finalPl) : 'P/L not recorded'}`);
+    return;
+  }
+
+  // Partial close — one side only (put or call)
+  const legCreditInput = document.getElementById('close-leg-credit').value;
+  const legDebitInput = document.getElementById('close-leg-debit').value;
+  const legNotes = document.getElementById('close-leg-notes').value;
+
+  const legDebit = legDebitInput !== '' ? parseFloat(legDebitInput) : null;
+  // Default the leg's entry credit to a 50/50 split of total credit unless user overrides
+  const defaultLegCredit = state.position.credit / 2;
+  const legCredit = legCreditInput !== '' ? parseFloat(legCreditInput) : defaultLegCredit;
+  const legPl = legDebit !== null ? (legCredit - legDebit) : null;
+
+  const closedLeg = {
+    side: mode,
+    strikes: mode === 'put'
+      ? { short: state.position.shortPut, long: state.position.longPut }
+      : { short: state.position.shortCall, long: state.position.longCall },
     closedAt: new Date().toISOString(),
-    closeCredit: cr,
-    closeDebit: db,
-    finalPl,
-    notes: notes || '',
+    creditAllocated: legCredit,
+    debitPaid: legDebit,
+    pl: legPl,
+    notes: legNotes || '',
   };
-  const newHistory = [record, ...state.history];
-  saveHistory(newHistory);
-  clearPosition();
-  if (pollTimer) clearInterval(pollTimer);
-  setState({
-    position: null, history: newHistory, closeFormOpen: false,
-    spreadCostInput: '', currentPrice: null, priceStatus: 'idle',
-  });
-  pushToGithub(`Close ${record.ticker} — ${finalPl !== null ? fmtMoney(finalPl) : 'P/L not recorded'}`);
+
+  const updated = { ...state.position };
+  updated.closedLegs = [...(updated.closedLegs || []), closedLeg];
+  // Strip the closed side's strikes so the position becomes one-sided going forward
+  if (mode === 'put') {
+    updated.shortPut = null;
+    updated.longPut = null;
+  } else {
+    updated.shortCall = null;
+    updated.longCall = null;
+  }
+
+  const stillHasPut = updated.shortPut !== null && updated.shortPut !== undefined;
+  const stillHasCall = updated.shortCall !== null && updated.shortCall !== undefined;
+
+  if (!stillHasPut && !stillHasCall) {
+    // Both sides now closed — finalize as a full close automatically
+    const totalPl = updated.closedLegs.reduce((s, l) => s + (l.pl || 0), 0);
+    const record = {
+      ...state.position, // keep original strikes for the history record
+      closedAt: new Date().toISOString(),
+      closeCredit: state.position.credit,
+      closeDebit: null,
+      finalPl: legPl !== null ? totalPl : null,
+      closedLegs: updated.closedLegs,
+      notes: updated.closedLegs.map(l => `${l.side}: ${l.notes}`).filter(n => n.trim() !== `${closedLeg.side}: `).join(' | '),
+    };
+    const newHistory = [record, ...state.history];
+    saveHistory(newHistory);
+    clearPosition();
+    if (pollTimer) clearInterval(pollTimer);
+    setState({
+      position: null, history: newHistory, closeFormOpen: false,
+      spreadCostInput: '', currentPrice: null, priceStatus: 'idle',
+    });
+    pushToGithub(`Close final leg (${mode}) & full position — ${legPl !== null ? fmtMoney(totalPl) : 'P/L not recorded'}`);
+    return;
+  }
+
+  savePosition(updated);
+  setState({ position: updated, closeFormOpen: false });
+  pushToGithub(`Close ${mode} side of ${updated.ticker} — ${legPl !== null ? fmtMoney(legPl) : 'P/L not recorded'}`);
 }
 
 function deleteHistoryItem(idx) {
@@ -729,22 +822,53 @@ function render() {
         </div>
       </details>
 
+      ${(pos.closedLegs && pos.closedLegs.length > 0) ? `
+        <div class="card" style="padding:14px 18px;">
+          <div class="section-label" style="margin:0 0 8px;">Already closed this position</div>
+          ${pos.closedLegs.map(l => `
+            <div class="stat-row">
+              <span>${l.side === 'put' ? 'Put' : 'Call'} spread (${l.strikes.short}/${l.strikes.long})</span>
+              <span class="mono" style="color:${l.pl !== null && l.pl >= 0 ? 'var(--green)' : 'var(--red)'}">${l.pl !== null ? fmtMoney(l.pl) : '—'}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
       ${state.closeFormOpen ? `
         <div class="card">
-          <h2 style="font-size:15px;margin:0 0 14px;font-weight:600;">Close out position</h2>
-          <div class="grid2">
-            <div><label class="field-label">Credit received (entry)</label><input id="close-credit" inputmode="decimal" value="${pos.credit}"></div>
-            <div><label class="field-label">Debit paid to close</label><input id="close-debit" inputmode="decimal" placeholder="e.g. 38, or 0 if expired worthless"></div>
-          </div>
-          <label class="field-label">Notes (optional)</label>
-          <input id="close-notes" placeholder="e.g. closed early on jobs report spike">
+          ${state.closeFormMode === 'full' ? `
+            <h2 style="font-size:15px;margin:0 0 14px;font-weight:600;">Close whole position</h2>
+            <div class="grid2">
+              <div><label class="field-label">Credit received (entry)</label><input id="close-credit" inputmode="decimal" value="${pos.credit}"></div>
+              <div><label class="field-label">Debit paid to close</label><input id="close-debit" inputmode="decimal" placeholder="e.g. 38, or 0 if expired worthless"></div>
+            </div>
+            <label class="field-label">Notes (optional)</label>
+            <input id="close-notes" placeholder="e.g. closed early on jobs report spike">
+          ` : `
+            <h2 style="font-size:15px;margin:0 0 6px;font-weight:600;">Close ${state.closeFormMode} spread only</h2>
+            <div style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">
+              The other side stays open and keeps tracking live. This locks in just this leg's result.
+            </div>
+            <div class="grid2">
+              <div><label class="field-label">Credit allocated to this leg</label><input id="close-leg-credit" inputmode="decimal" placeholder="${(pos.credit/2).toFixed(2)} (default: half of total)"></div>
+              <div><label class="field-label">Debit paid to close this leg</label><input id="close-leg-debit" inputmode="decimal" placeholder="e.g. 95"></div>
+            </div>
+            <label class="field-label">Notes (optional)</label>
+            <input id="close-leg-notes" placeholder="e.g. breached on jobs report, closed per rules">
+          `}
           <div class="form-actions" style="margin-top:14px;">
             <button class="btn btn-accent" style="flex:1;" onclick="handleConfirmClose()">Confirm &amp; archive</button>
             <button class="btn btn-ghost" onclick="setState({closeFormOpen:false})">Cancel</button>
           </div>
         </div>
       ` : `
-        <button class="btn btn-raised" onclick="openCloseForm()">Close &amp; record outcome</button>
+        ${isCondor ? `
+          <div style="display:flex;gap:10px;margin-bottom:10px;">
+            <button class="btn btn-raised" style="flex:1;" onclick="openCloseForm('put')">Close put side</button>
+            <button class="btn btn-raised" style="flex:1;" onclick="openCloseForm('call')">Close call side</button>
+          </div>
+        ` : ''}
+        <button class="btn btn-raised" onclick="openCloseForm('full')">Close ${isCondor ? 'whole position' : '& record outcome'}</button>
       `}
     `;
   }

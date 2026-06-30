@@ -406,7 +406,24 @@ async function initialGithubSync() {
   if (!ghConfigured(state.ghConfig)) return;
   setState({ ghStatus: 'syncing' });
   try {
-    await syncFromGithub(state.ghConfig);
+    const { content } = await ghGetFile(state.ghConfig);
+
+    if (content === null) {
+      // GitHub has no data.json yet — push whatever local data exists up to GitHub
+      // rather than overwriting local with nothing
+      const localPos = loadPosition();
+      const localHist = loadHistory();
+      if (localPos !== null || localHist.length > 0) {
+        await syncToGithub(state.ghConfig, localPos, localHist, 'Initial sync — push local data to GitHub');
+      }
+      setState({ ghStatus: 'ok', ghError: '' });
+      startPolling();
+      return;
+    }
+
+    // GitHub has data — pull it down and overwrite local
+    if (content.position !== undefined) savePosition(content.position);
+    if (content.history !== undefined) saveHistory(content.history);
     const freshPos = loadPosition();
     setState({
       position: freshPos,

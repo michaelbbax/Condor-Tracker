@@ -296,7 +296,7 @@ function levelDot(level) {
 
 // ---------- payoff chart (SVG string) ----------
 function payoffChartSVG(pos, currentPrice) {
-  const w = 660, h = 180, padX = 20;
+  const w = 660, h = 200, padX = 20, padTop = 14, padBottom = 22;
   const putWidth = pos.shortPut - pos.longPut;
   const callWidth = pos.shortCall ? pos.longCall - pos.shortCall : putWidth;
   const lowBound = pos.longPut - putWidth * 1.5;
@@ -306,7 +306,7 @@ function payoffChartSVG(pos, currentPrice) {
 
   const maxProfit = pos.credit;
   const maxLoss = Math.max(putWidth, callWidth) - pos.credit;
-  const yZero = h * 0.55, yProfit = yZero - 45, yLoss = yZero + 70;
+  const yZero = h * 0.5, yProfit = padTop + 18, yLoss = h - padBottom - 10;
   const rightShort = pos.shortCall || (pos.shortPut + putWidth * 2);
   const rightLong = pos.shortCall ? pos.longCall : highBound;
 
@@ -318,15 +318,56 @@ function payoffChartSVG(pos, currentPrice) {
   const pathD = points.map((pt,i) => `${i===0?'M':'L'} ${xFor(pt[0])} ${yFor(pt[1])}`).join(' ');
   const priceX = currentPrice ? xFor(Math.max(lowBound, Math.min(highBound, currentPrice))) : null;
 
-  const strikeLabels = [pos.shortPut, ...(pos.shortCall ? [pos.shortCall] : [])]
-    .map(s => `<text x="${xFor(s)}" y="${h-4}" text-anchor="middle" fill="var(--text-faint)" font-size="10">$${s}</text>`).join('');
+  // Breakevens: short strike +/- credit (approximate, ignoring per-side credit split)
+  const putBreakeven = pos.shortPut - pos.credit;
+  const callBreakeven = pos.shortCall ? pos.shortCall + pos.credit : null;
+
+  // Trigger (proximity) zone width — matches RULES.proximityPct (1%) used in the alert engine
+  const proxPct = 0.01;
+
+  function strikeMarker(strike, colorVar, labelTop) {
+    const x = xFor(strike);
+    const zoneHalfWidth = strike * proxPct;
+    const zoneX1 = xFor(strike - zoneHalfWidth);
+    const zoneX2 = xFor(strike + zoneHalfWidth);
+    return `
+      <rect x="${Math.min(zoneX1,zoneX2)}" y="${padTop}" width="${Math.abs(zoneX2-zoneX1)}" height="${h-padTop-padBottom}" fill="${colorVar}" opacity="0.08"/>
+      <line x1="${x}" y1="${padTop}" x2="${x}" y2="${h-padBottom}" stroke="${colorVar}" stroke-width="1" stroke-dasharray="2 2" opacity="0.6"/>
+      <circle cx="${x}" cy="${padTop+4}" r="2.5" fill="${colorVar}"/>
+      <text x="${x}" y="${h-6}" text-anchor="middle" fill="${colorVar}" font-size="10" font-weight="600">$${strike}</text>
+    `;
+  }
+
+  function breakevenMarker(price) {
+    if (price === null || price < lowBound || price > highBound) return '';
+    const x = xFor(price);
+    const y = yFor(0);
+    return `<circle cx="${x}" cy="${y}" r="3" fill="var(--bg)" stroke="var(--text-faint)" stroke-width="1.5"/>`;
+  }
+
+  const strikeMarkers = [
+    strikeMarker(pos.shortPut, 'var(--red)'),
+    ...(pos.shortCall ? [strikeMarker(pos.shortCall, 'var(--red)')] : []),
+  ].join('');
+
+  const breakevenMarkers = [
+    breakevenMarker(putBreakeven),
+    ...(callBreakeven !== null ? [breakevenMarker(callBreakeven)] : []),
+  ].join('');
 
   return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;">
     <line x1="${padX}" y1="${yZero}" x2="${w-padX}" y2="${yZero}" stroke="var(--border)" stroke-width="1"/>
+    ${strikeMarkers}
     <path d="${pathD}" fill="none" stroke="var(--green)" stroke-width="2"/>
-    ${priceX !== null ? `<line x1="${priceX}" y1="10" x2="${priceX}" y2="${h-10}" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 3"/>` : ''}
-    ${strikeLabels}
-  </svg>`;
+    ${breakevenMarkers}
+    ${priceX !== null ? `<line x1="${priceX}" y1="${padTop}" x2="${priceX}" y2="${h-padBottom}" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 3"/><circle cx="${priceX}" cy="${padTop-2}" r="3" fill="var(--accent)"/>` : ''}
+  </svg>
+  <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--text-faint);margin-top:6px;">
+    <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-right:4px;"></span>Current price</span>
+    <span><span style="display:inline-block;width:8px;height:1px;border-top:2px dashed var(--red);margin-right:4px;vertical-align:middle;"></span>Short strike</span>
+    <span><span style="display:inline-block;width:10px;height:8px;background:var(--red);opacity:0.25;margin-right:4px;vertical-align:middle;"></span>1% trigger zone</span>
+    <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--text-faint);margin-right:4px;vertical-align:middle;"></span>Breakeven</span>
+  </div>`;
 }
 
 // ---------- track record stats ----------

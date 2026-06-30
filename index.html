@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -211,30 +210,22 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// ---------- price fetch ----------
-async function fetchPrice(ticker) {
-  const attempts = [
-    async () => {
-      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`);
-      const j = await r.json();
-      return j.chart.result[0].meta.regularMarketPrice;
-    },
-    async () => {
-      const r = await fetch(`https://stooq.com/q/l/?s=${ticker.toLowerCase()}.us&f=sd2t2ohlcv&h&e=csv`);
-      const text = await r.text();
-      const line = text.trim().split('\n')[1];
-      const cols = line.split(',');
-      const close = parseFloat(cols[6]);
-      return isNaN(close) ? null : close;
-    },
-  ];
-  for (const attempt of attempts) {
-    try {
-      const price = await attempt();
-      if (price && !isNaN(price)) return price;
-    } catch (e) {}
+// ---------- price fetch (Alpha Vantage — reliable CORS support for browser calls) ----------
+async function fetchPrice(ticker, apiKey) {
+  if (!apiKey) return { price: null, error: 'no-key' };
+  try {
+    const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(ticker)}&apikey=${encodeURIComponent(apiKey)}`;
+    const r = await fetch(url);
+    const j = await r.json();
+    if (j.Note) return { price: null, error: 'rate-limit' }; // free tier: 25 calls/day, 5/min
+    if (j['Error Message']) return { price: null, error: 'bad-symbol' };
+    const quote = j['Global Quote'];
+    const price = quote && quote['05. price'] ? parseFloat(quote['05. price']) : null;
+    if (price && !isNaN(price)) return { price, error: null };
+    return { price: null, error: 'empty' };
+  } catch (e) {
+    return { price: null, error: 'network' };
   }
-  return null;
 }
 
 // ---------- rule engine ----------
@@ -345,6 +336,7 @@ let state = {
   ghConfig: loadGhConfig(),
   ghStatus: 'idle',
   ghError: '',
+  avKey: localStorage.getItem('condorwatch_av_key') || '',
 };
 state.spreadCostInput = state.position ? (state.position.currentSpreadCost || '') : '';
 
@@ -404,17 +396,31 @@ function setState(patch) {
 }
 
 async function refreshPrice(ticker) {
+  if (!state.avKey) {
+    setState({ priceStatus: 'nokey' });
+    return;
+  }
   setState({ priceStatus: 'loading' });
-  const price = await fetchPrice(ticker);
+  const { price, error } = await fetchPrice(ticker, state.avKey);
   if (price) setState({ currentPrice: price, priceStatus: 'ok' });
-  else setState({ priceStatus: 'fail' });
+  else setState({ priceStatus: error === 'rate-limit' ? 'ratelimit' : 'fail' });
 }
 
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   if (state.position) {
     refreshPrice(state.position.ticker);
-    pollTimer = setInterval(() => refreshPrice(state.position.ticker), 60000);
+    // Alpha Vantage free tier: 25 calls/day, 5/min — poll every 5 minutes to stay well under both limits
+    pollTimer = setInterval(() => refreshPrice(state.position.ticker), 5 * 60000);
+  }
+}
+
+function handleSaveAvKey() {
+  const key = document.getElementById('av-key').value.trim();
+  if (key) {
+    localStorage.setItem('condorwatch_av_key', key);
+    setState({ avKey: key });
+    if (state.position) startPolling();
   }
 }
 
@@ -579,6 +585,15 @@ function render() {
     const cfg = state.ghConfig;
     html += `
       <div class="card">
+        <h2 style="font-size:15px;margin:0 0 6px;font-weight:600;">Live price (Alpha Vantage)</h2>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.5;">
+          Free key from <a href="https://www.alphavantage.co/support/#api-key" target="_blank" style="color:var(--accent);">alphavantage.co</a> — 25 calls/day, refreshed every 5 minutes while a position is open.
+        </div>
+        <label class="field-label">API key</label>
+        <input id="av-key" placeholder="${state.avKey ? '•••••••••••• (saved — leave blank to keep)' : 'your key here'}">
+        <button class="btn btn-accent" style="width:100%;margin-top:10px;" onclick="handleSaveAvKey()">Save key</button>
+      </div>
+      <div class="card">
         <h2 style="font-size:15px;margin:0 0 6px;font-weight:600;">GitHub backup</h2>
         <div style="font-size:12px;color:var(--text-dim);margin-bottom:14px;line-height:1.5;">
           Commits a <code>data.json</code> file to your repo every time you open or close a position, so your history survives even if you clear this browser.
@@ -676,7 +691,7 @@ function render() {
           </div>
           <div style="text-align:right;">
             <div class="mono" style="font-size:18px;font-weight:700;">${state.priceStatus==='loading'?'…':state.priceStatus==='ok'?'$'+state.currentPrice.toFixed(2):'—'}</div>
-            <div style="font-size:11px;color:${state.priceStatus==='fail'?'var(--red)':'var(--text-faint)'};">${state.priceStatus==='fail'?'price unavailable':'live price'}</div>
+            <div style="font-size:11px;color:${(state.priceStatus==='fail'||state.priceStatus==='ratelimit'||state.priceStatus==='nokey')?'var(--red)':'var(--text-faint)'};">${state.priceStatus==='nokey'?'no API key set':state.priceStatus==='ratelimit'?'rate limit hit':state.priceStatus==='fail'?'price unavailable':'live price'}</div>
           </div>
         </div>
         ${payoffChartSVG(pos, state.currentPrice)}

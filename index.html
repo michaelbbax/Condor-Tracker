@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0d12">
+<title>Condor Watch</title>
+<style>
+  :root {
+    --bg: #0a0d12;
+    --panel: #11161d;
+    --panel-raised: #161c25;
+    --border: #232b36;
+    --text: #e4e8ed;
+    --text-dim: #8b96a5;
+    --text-faint: #5a6472;
+    --green: #3ddc84;
+    --green-dim: #1f6b41;
+    --red: #ff5d5d;
+    --red-dim: #6b2424;
+    --amber: #f5a623;
+    --accent: #4d8eff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mono { font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace; }
+  #root { max-width: 720px; margin: 0 auto; padding: 24px 18px 80px; min-height: 100vh; }
+
+  header { margin-bottom: 22px; display: flex; align-items: baseline; justify-content: space-between; }
+  h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .subtitle { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
+
+  .btn { border: none; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; padding: 12px 20px; }
+  .btn-accent { background: var(--accent); color: #fff; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+  .btn-raised { background: var(--panel-raised); border: 1px solid var(--border); color: var(--text); width: 100%; padding: 12px; }
+  .btn-sm { padding: 7px 12px; font-size: 12px; border-radius: 7px; }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 14px; }
+  .empty { background: var(--panel); border: 1px dashed var(--border); border-radius: 14px; padding: 40px 20px; text-align: center; }
+
+  label.field-label { font-size: 11px; color: var(--text-faint); margin-bottom: 6px; display: block; text-transform: uppercase; letter-spacing: 0.04em; }
+  input, select { width: 100%; background: var(--panel-raised); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 14px; font-family: 'SF Mono', monospace; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .section-label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 8px; }
+
+  .stat-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .stat-row span:first-child { color: var(--text-dim); font-size: 13px; }
+  .stat-row span:last-child { font-size: 13px; font-weight: 600; }
+
+  .alert { border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+  .alert-title { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .alert-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .alert-title span:last-child { font-weight: 600; font-size: 13.5px; }
+  .alert-detail { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+  .alert-danger { background: rgba(255,93,93,0.08); border: 1px solid var(--red); }
+  .alert-action { background: rgba(61,220,132,0.08); border: 1px solid var(--green); }
+  .alert-warn { background: rgba(245,166,35,0.08); border: 1px solid var(--amber); }
+  .alert-info { background: rgba(139,150,165,0.08); border: 1px solid var(--text-faint); }
+  .alert-ok { background: rgba(61,220,132,0.06); border: 1px solid var(--green-dim); border-radius: 10px; padding: 12px 14px; font-size: 13px; color: var(--text-dim); }
+
+  details.rules-box { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px 18px; margin-bottom: 14px; }
+  details.rules-box summary { cursor: pointer; font-size: 13px; color: var(--text-dim); font-weight: 600; }
+  .rules-list { margin-top: 10px; font-size: 12.5px; color: var(--text-dim); line-height: 1.8; }
+
+  .error-text { color: var(--red); font-size: 13px; margin-bottom: 12px; }
+  .form-actions { display: flex; gap: 10px; }
+
+  .hist-item { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .hist-left .hist-ticker { font-size: 13px; font-weight: 600; }
+  .hist-left .hist-meta { font-size: 11px; color: var(--text-faint); }
+  .hist-pl { font-size: 14px; font-weight: 700; }
+
+  /* Track record summary */
+  .tr-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 4px; }
+  .tr-stat { background: var(--panel-raised); border-radius: 10px; padding: 12px; text-align: center; }
+  .tr-stat .tr-val { font-size: 18px; font-weight: 700; font-family: 'SF Mono', monospace; }
+  .tr-stat .tr-label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 4px; }
+
+  svg text { font-family: 'SF Mono', monospace; }
+
+  .gh-status { font-size: 11px; padding: 6px 10px; border-radius: 6px; margin-bottom: 14px; display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+  .gh-status.ok { background: rgba(61,220,132,0.08); color: var(--green); }
+  .gh-status.off { background: rgba(139,150,165,0.08); color: var(--text-faint); }
+  .gh-status.err { background: rgba(255,93,93,0.08); color: var(--red); }
+  .gh-status a, .gh-status button.link { background: none; border: none; color: inherit; text-decoration: underline; cursor: pointer; font-size: 11px; padding: 0; }
+</style>
+</head>
+<body>
+<div id="root">Loading…</div>
+
+<script>
+const RULES = {
+  profitTargetPct: 0.5,
+  stopLossMultiple: 2,
+  proximityPct: 0.01,
+  proximityMinDTE: 5,
+  finalWindowDTE: 2,
+};
+
+// ---------- storage (localStorage cache, with optional GitHub-backed persistence) ----------
+const STORAGE_KEYS = { active: 'condorwatch_active', history: 'condorwatch_history', gh: 'condorwatch_github_config' };
+
+function loadPosition() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.active);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function savePosition(pos) {
+  try { localStorage.setItem(STORAGE_KEYS.active, JSON.stringify(pos)); } catch (e) {}
+}
+function clearPosition() {
+  try { localStorage.removeItem(STORAGE_KEYS.active); } catch (e) {}
+}
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.history);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+function saveHistory(hist) {
+  try { localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(hist)); } catch (e) {}
+}
+
+// ---------- GitHub-backed persistence ----------
+function loadGhConfig() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.gh);
+    return raw ? JSON.parse(raw) : { token: '', owner: '', repo: '', path: 'data.json', branch: 'main' };
+  } catch (e) { return { token: '', owner: '', repo: '', path: 'data.json', branch: 'main' }; }
+}
+function saveGhConfig(cfg) {
+  try { localStorage.setItem(STORAGE_KEYS.gh, JSON.stringify(cfg)); } catch (e) {}
+}
+function ghConfigured(cfg) {
+  return !!(cfg.token && cfg.owner && cfg.repo);
+}
+
+async function ghGetFile(cfg) {
+  const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(cfg.path)}?ref=${encodeURIComponent(cfg.branch)}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json' },
+  });
+  if (res.status === 404) return { content: null, sha: null };
+  if (!res.ok) throw new Error(`GitHub GET failed: ${res.status}`);
+  const json = await res.json();
+  const decoded = JSON.parse(decodeURIComponent(escape(atob(json.content.replace(/\n/g, '')))));
+  return { content: decoded, sha: json.sha };
+}
+
+async function ghPutFile(cfg, dataObj, sha, message) {
+  const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(cfg.path)}`;
+  const body = {
+    message: message || 'Update condor watch data',
+    content: btoa(unescape(encodeURIComponent(JSON.stringify(dataObj, null, 2)))),
+    branch: cfg.branch,
+  };
+  if (sha) body.sha = sha;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`GitHub PUT failed: ${res.status} ${errText}`);
+  }
+  const json = await res.json();
+  return json.content.sha;
+}
+
+// Pulls remote data.json (if configured) and overwrites local cache.
+async function syncFromGithub(cfg) {
+  const { content } = await ghGetFile(cfg);
+  if (content) {
+    if (content.position !== undefined) savePosition(content.position);
+    if (content.history !== undefined) saveHistory(content.history);
+  }
+  return content;
+}
+
+// Pushes current local position+history to GitHub as a single commit.
+async function syncToGithub(cfg, position, history, message) {
+  const { sha: currentSha } = await ghGetFile(cfg);
+  const dataObj = { position, history, updatedAt: new Date().toISOString() };
+  return await ghPutFile(cfg, dataObj, currentSha, message);
+}
+
+// ---------- helpers ----------
+function fmtMoney(n) {
+  const sign = n < 0 ? '-' : '';
+  return sign + '$' + Math.abs(n).toFixed(2);
+}
+function daysUntil(dateStr) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const target = new Date(dateStr + 'T00:00:00');
+  return Math.round((target - today) / 86400000);
+}
+function pctDiff(a, b) { return (a - b) / b; }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---------- price fetch ----------
+async function fetchPrice(ticker) {
+  const attempts = [
+    async () => {
+      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`);
+      const j = await r.json();
+      return j.chart.result[0].meta.regularMarketPrice;
+    },
+    async () => {
+      const r = await fetch(`https://stooq.com/q/l/?s=${ticker.toLowerCase()}.us&f=sd2t2ohlcv&h&e=csv`);
+      const text = await r.text();
+      const line = text.trim().split('\n')[1];
+      const cols = line.split(',');
+      const close = parseFloat(cols[6]);
+      return isNaN(close) ? null : close;
+    },
+  ];
+  for (const attempt of attempts) {
+    try {
+      const price = await attempt();
+      if (price && !isNaN(price)) return price;
+    } catch (e) {}
+  }
+  return null;
+}
+
+// ---------- rule engine ----------
+function evaluateRules(pos, currentPrice, currentSpreadCost) {
+  const alerts = [];
+  const credit = pos.credit;
+  const dte = daysUntil(pos.expiration);
+
+  let pl = null;
+  if (currentSpreadCost !== null && currentSpreadCost !== undefined && currentSpreadCost !== '') {
+    pl = credit - parseFloat(currentSpreadCost);
+  }
+
+  if (pl !== null && pl >= credit * RULES.profitTargetPct) {
+    alerts.push({ level: 'action', title: 'Close — profit target hit',
+      detail: `P/L of ${fmtMoney(pl)} has reached the ${RULES.profitTargetPct*100}% target (${fmtMoney(credit*RULES.profitTargetPct)}). Lock it in.` });
+  }
+  if (pl !== null && pl <= -credit * RULES.stopLossMultiple) {
+    alerts.push({ level: 'danger', title: 'Close — stop loss triggered',
+      detail: `Loss of ${fmtMoney(Math.abs(pl))} has reached ${RULES.stopLossMultiple}x credit received (${fmtMoney(credit*RULES.stopLossMultiple)}). Exit now, no exceptions.` });
+  }
+  if (currentPrice && dte >= RULES.proximityMinDTE) {
+    const putDist = pctDiff(currentPrice, pos.shortPut);
+    if (putDist <= RULES.proximityPct && putDist > -0.05) {
+      alerts.push({ level: 'warn', title: 'Put side being tested',
+        detail: `Price is ${(putDist*100).toFixed(2)}% above your short put ($${pos.shortPut}). Watch closely or manage this side.` });
+    }
+    if (pos.shortCall) {
+      const callDist = pctDiff(pos.shortCall, currentPrice);
+      if (callDist <= RULES.proximityPct && callDist > -0.05) {
+        alerts.push({ level: 'warn', title: 'Call side being tested',
+          detail: `Price is ${(callDist*100).toFixed(2)}% below your short call ($${pos.shortCall}). Watch closely or manage this side.` });
+      }
+    }
+  }
+  if (dte <= RULES.finalWindowDTE && dte >= 0) {
+    alerts.push({ level: 'warn', title: `${dte} day${dte===1?'':'s'} to expiration — gamma risk window`,
+      detail: `Inside the final ${RULES.finalWindowDTE}-day window. Consider closing regardless of P/L rather than holding through expiration.` });
+  }
+  if (dte < 0) {
+    alerts.push({ level: 'info', title: 'Expiration has passed',
+      detail: `This position expired ${Math.abs(dte)} day${Math.abs(dte)===1?'':'s'} ago. Log the outcome and archive it.` });
+  }
+  return { alerts, pl, dte };
+}
+
+function levelDot(level) {
+  return { danger: 'var(--red)', action: 'var(--green)', warn: 'var(--amber)', info: 'var(--text-faint)' }[level] || 'var(--text-faint)';
+}
+
+// ---------- payoff chart (SVG string) ----------
+function payoffChartSVG(pos, currentPrice) {
+  const w = 660, h = 180, padX = 20;
+  const putWidth = pos.shortPut - pos.longPut;
+  const callWidth = pos.shortCall ? pos.longCall - pos.shortCall : putWidth;
+  const lowBound = pos.longPut - putWidth * 1.5;
+  const highBound = pos.shortCall ? pos.longCall + callWidth * 1.5 : pos.shortPut + putWidth * 3;
+  const range = highBound - lowBound;
+  const xFor = p => padX + ((p - lowBound) / range) * (w - padX*2);
+
+  const maxProfit = pos.credit;
+  const maxLoss = Math.max(putWidth, callWidth) - pos.credit;
+  const yZero = h * 0.55, yProfit = yZero - 45, yLoss = yZero + 70;
+  const rightShort = pos.shortCall || (pos.shortPut + putWidth * 2);
+  const rightLong = pos.shortCall ? pos.longCall : highBound;
+
+  const points = [
+    [lowBound, -maxLoss], [pos.longPut, -maxLoss], [pos.shortPut, maxProfit],
+    [rightShort, maxProfit], [rightLong, -maxLoss], [highBound, -maxLoss],
+  ];
+  const yFor = pl => pl >= 0 ? yZero - (pl/maxProfit)*(yZero-yProfit) : yZero + (Math.abs(pl)/maxLoss)*(yLoss-yZero);
+  const pathD = points.map((pt,i) => `${i===0?'M':'L'} ${xFor(pt[0])} ${yFor(pt[1])}`).join(' ');
+  const priceX = currentPrice ? xFor(Math.max(lowBound, Math.min(highBound, currentPrice))) : null;
+
+  const strikeLabels = [pos.shortPut, ...(pos.shortCall ? [pos.shortCall] : [])]
+    .map(s => `<text x="${xFor(s)}" y="${h-4}" text-anchor="middle" fill="var(--text-faint)" font-size="10">$${s}</text>`).join('');
+
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;">
+    <line x1="${padX}" y1="${yZero}" x2="${w-padX}" y2="${yZero}" stroke="var(--border)" stroke-width="1"/>
+    <path d="${pathD}" fill="none" stroke="var(--green)" stroke-width="2"/>
+    ${priceX !== null ? `<line x1="${priceX}" y1="10" x2="${priceX}" y2="${h-10}" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="4 3"/>` : ''}
+    ${strikeLabels}
+  </svg>`;
+}
+
+// ---------- track record stats ----------
+function computeTrackRecord(history) {
+  const closed = history.filter(h => h.finalPl !== null && h.finalPl !== undefined);
+  const n = closed.length;
+  const wins = closed.filter(h => h.finalPl > 0).length;
+  const totalPl = closed.reduce((s,h) => s + h.finalPl, 0);
+  const winRate = n > 0 ? (wins / n) * 100 : null;
+  const avgPl = n > 0 ? totalPl / n : null;
+  return { n, wins, totalPl, winRate, avgPl };
+}
+
+// ---------- state ----------
+let state = {
+  position: loadPosition(),
+  history: loadHistory(),
+  showForm: false,
+  showHistory: false,
+  showSettings: false,
+  currentPrice: null,
+  priceStatus: 'idle',
+  spreadCostInput: '',
+  closeFormOpen: false,
+  ghConfig: loadGhConfig(),
+  ghStatus: 'idle',
+  ghError: '',
+};
+state.spreadCostInput = state.position ? (state.position.currentSpreadCost || '') : '';
+
+let pollTimer = null;
+
+async function initialGithubSync() {
+  if (!ghConfigured(state.ghConfig)) return;
+  setState({ ghStatus: 'syncing' });
+  try {
+    await syncFromGithub(state.ghConfig);
+    const freshPos = loadPosition();
+    setState({
+      position: freshPos,
+      history: loadHistory(),
+      spreadCostInput: freshPos ? (freshPos.currentSpreadCost || '') : '',
+      ghStatus: 'ok',
+      ghError: '',
+    });
+    startPolling();
+  } catch (e) {
+    setState({ ghStatus: 'error', ghError: e.message });
+  }
+}
+
+async function pushToGithub(message) {
+  if (!ghConfigured(state.ghConfig)) return;
+  setState({ ghStatus: 'syncing' });
+  try {
+    await syncToGithub(state.ghConfig, state.position, state.history, message);
+    setState({ ghStatus: 'ok', ghError: '' });
+  } catch (e) {
+    setState({ ghStatus: 'error', ghError: e.message });
+  }
+}
+
+function handleSaveGhSettings() {
+  const owner = document.getElementById('gh-owner').value.trim();
+  const repo = document.getElementById('gh-repo').value.trim();
+  const path = document.getElementById('gh-path').value.trim() || 'data.json';
+  const branch = document.getElementById('gh-branch').value.trim() || 'main';
+  const token = document.getElementById('gh-token').value.trim();
+  const cfg = { owner, repo, path, branch, token: token || state.ghConfig.token };
+  saveGhConfig(cfg);
+  setState({ ghConfig: cfg, showSettings: false });
+  initialGithubSync();
+}
+
+function handleDisconnectGh() {
+  const cfg = { token: '', owner: '', repo: '', path: 'data.json', branch: 'main' };
+  saveGhConfig(cfg);
+  setState({ ghConfig: cfg, ghStatus: 'idle', ghError: '' });
+}
+
+function setState(patch) {
+  state = { ...state, ...patch };
+  render();
+}
+
+async function refreshPrice(ticker) {
+  setState({ priceStatus: 'loading' });
+  const price = await fetchPrice(ticker);
+  if (price) setState({ currentPrice: price, priceStatus: 'ok' });
+  else setState({ priceStatus: 'fail' });
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  if (state.position) {
+    refreshPrice(state.position.ticker);
+    pollTimer = setInterval(() => refreshPrice(state.position.ticker), 60000);
+  }
+}
+
+// ---------- actions ----------
+function handleSaveForm() {
+  const ticker = document.getElementById('f-ticker').value.trim().toUpperCase();
+  const shortPut = parseFloat(document.getElementById('f-shortput').value);
+  const longPut = parseFloat(document.getElementById('f-longput').value);
+  const shortCall = parseFloat(document.getElementById('f-shortcall').value);
+  const longCall = parseFloat(document.getElementById('f-longcall').value);
+  const credit = parseFloat(document.getElementById('f-credit').value);
+  const expiration = document.getElementById('f-expiration').value;
+  const contracts = parseInt(document.getElementById('f-contracts').value) || 1;
+
+  const errEl = document.getElementById('f-error');
+
+  if (!ticker || isNaN(shortPut) || isNaN(longPut) || isNaN(credit) || !expiration) {
+    errEl.textContent = 'Fill in at least ticker, put strikes, credit, and expiration.';
+    return;
+  }
+  if (longPut >= shortPut) {
+    errEl.textContent = 'Long put strike should be below short put strike.';
+    return;
+  }
+  const isCondor = !isNaN(shortCall) && !isNaN(longCall);
+  if (isCondor && longCall <= shortCall) {
+    errEl.textContent = 'Long call strike should be above short call strike.';
+    return;
+  }
+
+  const pos = {
+    ticker, shortPut, longPut,
+    shortCall: isCondor ? shortCall : null,
+    longCall: isCondor ? longCall : null,
+    credit, contracts, expiration,
+    openedAt: new Date().toISOString(),
+    currentSpreadCost: '',
+  };
+  savePosition(pos);
+  setState({ position: pos, showForm: false, spreadCostInput: '', currentPrice: null, priceStatus: 'idle' });
+  startPolling();
+  pushToGithub(`Open ${ticker} ${isCondor ? 'condor' : 'put spread'} — exp ${expiration}`);
+}
+
+function handleUpdateSpreadCost(val) {
+  state.spreadCostInput = val;
+  if (state.position) {
+    const updated = { ...state.position, currentSpreadCost: val };
+    state.position = updated;
+    savePosition(updated);
+  }
+  renderAlertsAndPL();
+}
+
+function openCloseForm() {
+  setState({ closeFormOpen: true });
+}
+
+function handleConfirmClose() {
+  const creditAtClose = document.getElementById('close-credit').value;
+  const debitAtClose = document.getElementById('close-debit').value;
+  const notes = document.getElementById('close-notes').value;
+
+  if (!state.position) return;
+
+  const cr = creditAtClose !== '' ? parseFloat(creditAtClose) : state.position.credit;
+  const db = debitAtClose !== '' ? parseFloat(debitAtClose) : null;
+  const finalPl = db !== null ? (cr - db) : null;
+
+  const record = {
+    ...state.position,
+    closedAt: new Date().toISOString(),
+    closeCredit: cr,
+    closeDebit: db,
+    finalPl,
+    notes: notes || '',
+  };
+  const newHistory = [record, ...state.history];
+  saveHistory(newHistory);
+  clearPosition();
+  if (pollTimer) clearInterval(pollTimer);
+  setState({
+    position: null, history: newHistory, closeFormOpen: false,
+    spreadCostInput: '', currentPrice: null, priceStatus: 'idle',
+  });
+  pushToGithub(`Close ${record.ticker} — ${finalPl !== null ? fmtMoney(finalPl) : 'P/L not recorded'}`);
+}
+
+function deleteHistoryItem(idx) {
+  const newHistory = state.history.filter((_, i) => i !== idx);
+  saveHistory(newHistory);
+  setState({ history: newHistory });
+  pushToGithub('Remove archived position from history');
+}
+
+// ---------- render ----------
+function renderAlertsAndPL() {
+  // Lightweight partial update for the spread cost field without full re-render (keeps input focus)
+  const pos = state.position;
+  if (!pos) return;
+  const evalResult = evaluateRules(pos, state.currentPrice, state.spreadCostInput);
+
+  const plEl = document.getElementById('pl-display');
+  if (plEl) {
+    if (evalResult.pl !== null) {
+      plEl.innerHTML = `Current P/L: <span class="mono" style="font-weight:700;color:${evalResult.pl>=0?'var(--green)':'var(--red)'}">${fmtMoney(evalResult.pl)}</span><span style="color:var(--text-faint)"> (${((evalResult.pl/pos.credit)*100).toFixed(0)}% of credit)</span>`;
+      plEl.style.display = 'block';
+    } else {
+      plEl.style.display = 'none';
+    }
+  }
+
+  const alertsEl = document.getElementById('alerts-list');
+  if (alertsEl) {
+    if (evalResult.alerts.length === 0) {
+      alertsEl.innerHTML = `<div class="alert-ok"><span style="color:var(--green);font-weight:600;">All clear.</span> No rules triggered — hold as planned.</div>`;
+    } else {
+      alertsEl.innerHTML = evalResult.alerts.map(a => `
+        <div class="alert alert-${a.level}">
+          <div class="alert-title"><span class="alert-dot" style="background:${levelDot(a.level)}"></span><span>${escapeHtml(a.title)}</span></div>
+          <div class="alert-detail">${escapeHtml(a.detail)}</div>
+        </div>
+      `).join('');
+    }
+  }
+}
+
+function render() {
+  const root = document.getElementById('root');
+  const pos = state.position;
+  const isCondor = pos && pos.shortCall !== null && pos.shortCall !== undefined;
+  const evalResult = pos ? evaluateRules(pos, state.currentPrice, state.spreadCostInput) : null;
+  const tr = computeTrackRecord(state.history);
+
+  let html = `
+    <header>
+      <div>
+        <h1>Condor Watch</h1>
+        <div class="subtitle">Position rules &amp; track record</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost btn-sm" onclick="setState({showSettings: !state.showSettings})">⚙</button>
+        ${state.history.length > 0 ? `<button class="btn btn-ghost btn-sm" onclick="setState({showHistory: !state.showHistory})">${state.showHistory ? 'Hide' : 'History'} (${state.history.length})</button>` : ''}
+      </div>
+    </header>
+  `;
+
+  // GitHub sync status banner
+  if (ghConfigured(state.ghConfig)) {
+    if (state.ghStatus === 'ok') {
+      html += `<div class="gh-status ok"><span>✓ Synced to ${escapeHtml(state.ghConfig.owner)}/${escapeHtml(state.ghConfig.repo)}</span></div>`;
+    } else if (state.ghStatus === 'syncing') {
+      html += `<div class="gh-status off"><span>Syncing…</span></div>`;
+    } else if (state.ghStatus === 'error') {
+      html += `<div class="gh-status err"><span>Sync failed: ${escapeHtml(state.ghError)}</span><button class="link" onclick="setState({showSettings:true})">fix</button></div>`;
+    }
+  } else {
+    html += `<div class="gh-status off"><span>Not backed up — data only lives in this browser</span><button class="link" onclick="setState({showSettings:true})">set up</button></div>`;
+  }
+
+  if (state.showSettings) {
+    const cfg = state.ghConfig;
+    html += `
+      <div class="card">
+        <h2 style="font-size:15px;margin:0 0 6px;font-weight:600;">GitHub backup</h2>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:14px;line-height:1.5;">
+          Commits a <code>data.json</code> file to your repo every time you open or close a position, so your history survives even if you clear this browser.
+          Use a <strong>fine-grained personal access token</strong> scoped to just this repo with <strong>Contents: Read and write</strong> permission — nothing else.
+        </div>
+        <div class="grid2">
+          <div><label class="field-label">Repo owner</label><input id="gh-owner" placeholder="your-username" value="${escapeHtml(cfg.owner)}"></div>
+          <div><label class="field-label">Repo name</label><input id="gh-repo" placeholder="condor-watch" value="${escapeHtml(cfg.repo)}"></div>
+        </div>
+        <div class="grid2">
+          <div><label class="field-label">File path</label><input id="gh-path" placeholder="data.json" value="${escapeHtml(cfg.path)}"></div>
+          <div><label class="field-label">Branch</label><input id="gh-branch" placeholder="main" value="${escapeHtml(cfg.branch)}"></div>
+        </div>
+        <label class="field-label">Personal access token</label>
+        <input id="gh-token" type="password" placeholder="${cfg.token ? '•••••••••••••• (saved — leave blank to keep)' : 'github_pat_...'}">
+        <div class="form-actions" style="margin-top:14px;">
+          <button class="btn btn-accent" style="flex:1;" onclick="handleSaveGhSettings()">Save &amp; sync</button>
+          <button class="btn btn-ghost" onclick="setState({showSettings:false})">Cancel</button>
+        </div>
+        ${ghConfigured(cfg) ? `<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;" onclick="handleDisconnectGh()">Disconnect</button>` : ''}
+      </div>
+    `;
+  }
+
+  // Track record summary (always shown if there's closed history)
+  if (tr.n > 0) {
+    html += `
+      <div class="card" style="padding:14px 18px;">
+        <div class="section-label" style="margin:0 0 10px;">Track record</div>
+        <div class="tr-grid">
+          <div class="tr-stat">
+            <div class="tr-val">${tr.winRate.toFixed(0)}%</div>
+            <div class="tr-label">Win rate</div>
+          </div>
+          <div class="tr-stat">
+            <div class="tr-val" style="color:${tr.totalPl>=0?'var(--green)':'var(--red)'}">${fmtMoney(tr.totalPl)}</div>
+            <div class="tr-label">Total P/L</div>
+          </div>
+          <div class="tr-stat">
+            <div class="tr-val">${tr.n}</div>
+            <div class="tr-label">Trades</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (!pos && !state.showForm) {
+    html += `
+      <div class="empty">
+        <div style="font-size:14px;color:var(--text-dim);margin-bottom:16px;">No active position logged.</div>
+        <button class="btn btn-accent" onclick="setState({showForm: true})">+ Log a position</button>
+      </div>
+    `;
+  }
+
+  if (state.showForm) {
+    html += `
+      <div class="card">
+        <h2 style="font-size:16px;margin:0 0 16px;font-weight:600;">Log new position</h2>
+        <div class="grid2">
+          <div><label class="field-label">Ticker</label><input id="f-ticker" value="SPY" placeholder="SPY"></div>
+          <div><label class="field-label">Expiration</label><input id="f-expiration" type="date"></div>
+        </div>
+        <div class="section-label">Put spread</div>
+        <div class="grid2">
+          <div><label class="field-label">Short put strike</label><input id="f-shortput" inputmode="decimal" placeholder="728"></div>
+          <div><label class="field-label">Long put strike</label><input id="f-longput" inputmode="decimal" placeholder="725"></div>
+        </div>
+        <div class="section-label">Call spread (optional — leave blank for put-only spread)</div>
+        <div class="grid2">
+          <div><label class="field-label">Short call strike</label><input id="f-shortcall" inputmode="decimal" placeholder="760"></div>
+          <div><label class="field-label">Long call strike</label><input id="f-longcall" inputmode="decimal" placeholder="763"></div>
+        </div>
+        <div class="grid2">
+          <div><label class="field-label">Total credit ($)</label><input id="f-credit" inputmode="decimal" placeholder="76"></div>
+          <div><label class="field-label">Contracts</label><input id="f-contracts" inputmode="numeric" value="1"></div>
+        </div>
+        <div class="error-text" id="f-error"></div>
+        <div class="form-actions">
+          <button class="btn btn-accent" style="flex:1;" onclick="handleSaveForm()">Save position</button>
+          <button class="btn btn-ghost" onclick="setState({showForm:false})">Cancel</button>
+        </div>
+      </div>
+    `;
+  }
+
+  if (pos && !state.showForm) {
+    html += `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
+          <div>
+            <div class="mono" style="font-size:18px;font-weight:700;">${escapeHtml(pos.ticker)}</div>
+            <div style="font-size:12px;color:var(--text-faint);">${isCondor?'Iron Condor':'Put Spread'} · exp ${pos.expiration} · ${pos.contracts}x</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="mono" style="font-size:18px;font-weight:700;">${state.priceStatus==='loading'?'…':state.priceStatus==='ok'?'$'+state.currentPrice.toFixed(2):'—'}</div>
+            <div style="font-size:11px;color:${state.priceStatus==='fail'?'var(--red)':'var(--text-faint)'};">${state.priceStatus==='fail'?'price unavailable':'live price'}</div>
+          </div>
+        </div>
+        ${payoffChartSVG(pos, state.currentPrice)}
+        <div style="margin-top:6px;">
+          <div class="stat-row"><span>Short put</span><span class="mono">$${pos.shortPut}</span></div>
+          <div class="stat-row"><span>Long put</span><span class="mono">$${pos.longPut}</span></div>
+          ${isCondor ? `<div class="stat-row"><span>Short call</span><span class="mono">$${pos.shortCall}</span></div>` : ''}
+          ${isCondor ? `<div class="stat-row"><span>Long call</span><span class="mono">$${pos.longCall}</span></div>` : ''}
+          <div class="stat-row"><span>Credit received</span><span class="mono" style="color:var(--green);">${fmtMoney(pos.credit)}</span></div>
+          <div class="stat-row"><span>Days to expiration</span><span class="mono">${evalResult.dte}</span></div>
+          ${state.currentPrice ? `<div class="stat-row"><span>Distance to short put</span><span class="mono">${(pctDiff(state.currentPrice,pos.shortPut)*100).toFixed(2)}%</span></div>` : ''}
+          ${(state.currentPrice && isCondor) ? `<div class="stat-row"><span>Distance to short call</span><span class="mono">${(pctDiff(pos.shortCall,state.currentPrice)*100).toFixed(2)}%</span></div>` : ''}
+        </div>
+      </div>
+
+      <div class="card">
+        <label class="field-label">Current cost to close ($, debit to buy back)</label>
+        <input id="spread-cost-input" inputmode="decimal" placeholder="e.g. 38" value="${escapeHtml(state.spreadCostInput)}" oninput="handleUpdateSpreadCost(this.value)">
+        <div id="pl-display" style="margin-top:12px;font-size:14px;display:none;"></div>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:8px;">Check your broker for the current debit to close the full spread, enter it here to get P/L-based alerts.</div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div class="section-label">Status</div>
+        <div id="alerts-list"></div>
+      </div>
+
+      <details class="rules-box">
+        <summary>Active rules</summary>
+        <div class="rules-list">
+          <div>• Close at <strong>50%</strong> of max credit profit</div>
+          <div>• Close at <strong>2x credit</strong> loss (stop loss)</div>
+          <div>• Warn when price is within <strong>1%</strong> of a short strike (5+ DTE)</div>
+          <div>• Warn inside final <strong>2 days</strong> to expiration regardless of P/L</div>
+        </div>
+      </details>
+
+      ${state.closeFormOpen ? `
+        <div class="card">
+          <h2 style="font-size:15px;margin:0 0 14px;font-weight:600;">Close out position</h2>
+          <div class="grid2">
+            <div><label class="field-label">Credit received (entry)</label><input id="close-credit" inputmode="decimal" value="${pos.credit}"></div>
+            <div><label class="field-label">Debit paid to close</label><input id="close-debit" inputmode="decimal" placeholder="e.g. 38, or 0 if expired worthless"></div>
+          </div>
+          <label class="field-label">Notes (optional)</label>
+          <input id="close-notes" placeholder="e.g. closed early on jobs report spike">
+          <div class="form-actions" style="margin-top:14px;">
+            <button class="btn btn-accent" style="flex:1;" onclick="handleConfirmClose()">Confirm &amp; archive</button>
+            <button class="btn btn-ghost" onclick="setState({closeFormOpen:false})">Cancel</button>
+          </div>
+        </div>
+      ` : `
+        <button class="btn btn-raised" onclick="openCloseForm()">Close &amp; record outcome</button>
+      `}
+    `;
+  }
+
+  if (state.showHistory && state.history.length > 0) {
+    html += `
+      <div style="margin-top:20px;">
+        <div class="section-label">Closed positions</div>
+        ${state.history.map((h, i) => `
+          <div class="hist-item">
+            <div class="hist-left">
+              <div class="hist-ticker mono">${escapeHtml(h.ticker)} ${h.shortPut}/${h.longPut}${h.shortCall ? ` · ${h.shortCall}/${h.longCall}` : ''}</div>
+              <div class="hist-meta">exp ${h.expiration} · closed ${new Date(h.closedAt).toLocaleDateString()}${h.notes ? ' · ' + escapeHtml(h.notes) : ''}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div class="hist-pl mono" style="color:${(h.finalPl!==null && h.finalPl>=0)?'var(--green)':'var(--red)'}">${h.finalPl!==null && h.finalPl!==undefined ? fmtMoney(h.finalPl) : '—'}</div>
+              <button class="btn btn-ghost btn-sm" onclick="deleteHistoryItem(${i})">✕</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  root.innerHTML = html;
+
+  if (pos && !state.showForm) {
+    renderAlertsAndPL();
+  }
+}
+
+render();
+startPolling();
+initialGithubSync();
+</script>
+</body>
+</html>

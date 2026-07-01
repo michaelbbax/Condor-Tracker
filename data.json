@@ -1,0 +1,18 @@
+{
+  "positions": [
+    {
+      "ticker": "SPY",
+      "shortPut": 728,
+      "longPut": 725,
+      "shortCall": 760,
+      "longCall": 763,
+      "credit": 75.84,
+      "contracts": 1,
+      "expiration": "2026-07-10",
+      "openedAt": "2026-06-30T16:31:45.784Z",
+      "currentSpreadCost": "74"
+    }
+  ],
+  "history": [],
+  "updatedAt": "2026-07-01T14:14:40.606Z"
+}

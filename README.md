@@ -1,0 +1,4 @@
+GitHub Token - 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
+
+
+Finnhub API Key - d920281r01qqnh2jahm0d920281r01qqnh2jahmg

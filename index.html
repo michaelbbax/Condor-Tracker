@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -260,8 +259,16 @@ function chartSVG(pos, price){
   const hasPut=pos.shortPut&&pos.longPut, hasCall=pos.shortCall&&pos.longCall;
   const putW=hasPut?pos.shortPut-pos.longPut:10;
   const callW=hasCall?pos.longCall-pos.shortCall:putW;
-  const lo=hasPut?pos.longPut-putW*1.5:(pos.shortCall-callW*3);
-  const hi=hasCall?pos.longCall+callW*1.5:(pos.shortPut+putW*3);
+
+  // Base the visible range on the inner condor width (short put to short call),
+  // with padding proportional to that inner width so the tent shape is clearly visible.
+  const innerWidth = hasCall && hasPut ? pos.shortCall - pos.shortPut :
+                     hasPut ? putW * 4 : callW * 4;
+  const pad = innerWidth * 0.35; // 35% padding on each side
+  const midpoint = hasPut && hasCall ? (pos.shortPut + pos.shortCall) / 2 :
+                   hasPut ? pos.shortPut : pos.shortCall;
+  const lo = midpoint - innerWidth/2 - pad;
+  const hi = midpoint + innerWidth/2 + pad;
   const rng=hi-lo;
   const xf=p=>px+((p-lo)/rng)*(w-px*2);
   const totalCredit=(pos.putCredit||0)+(pos.callCredit||0);

@@ -1,0 +1,23 @@
+{
+  "positions": [
+    {
+      "id": "mr292iayj3ki",
+      "ticker": "SPY",
+      "expiration": "2026-07-10",
+      "contracts": 1,
+      "openedAt": "2026-07-01T15:48:19.114Z",
+      "shortPut": 728,
+      "longPut": 725,
+      "putCredit": 34,
+      "putCostToClose": "",
+      "shortCall": 760,
+      "longCall": 763,
+      "callCredit": 42,
+      "callCostToClose": "",
+      "closedLegs": [],
+      "notes": ""
+    }
+  ],
+  "history": [],
+  "updatedAt": "2026-07-01T15:48:19.380Z"
+}
